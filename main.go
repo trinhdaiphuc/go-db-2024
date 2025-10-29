@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/chzyer/readline"
+
 	"github.com/srmadden/godb"
 )
 
@@ -154,7 +155,7 @@ func main() {
 					hasHeader = splits[4] != "false"
 				}
 
-				//todo -- following code assumes data is in heap files
+				// todo -- following code assumes data is in heap files
 				hf, err := c.GetTable(table)
 				if err != nil {
 					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
@@ -171,7 +172,7 @@ func main() {
 					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
 					continue
 				}
-				bp.FlushAllPages() //gross, if in a transaction, but oh well!
+				bp.FlushAllPages() // gross, if in a transaction, but oh well!
 				fmt.Printf("\033[32;1mLOAD\033[0m\n\n")
 			}
 
