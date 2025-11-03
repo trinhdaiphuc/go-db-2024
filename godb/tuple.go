@@ -5,6 +5,7 @@ package godb
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"strconv"
@@ -188,11 +189,7 @@ func (t *Tuple) writeTo(b *bytes.Buffer) error {
 			b.Write(strBytes[:])
 		case IntType:
 			value := t.Fields[idx].(IntField).Value
-			intBytes := [8]byte{}
-			for i := 0; i < 8; i++ {
-				intBytes[i] = byte(value >> (8 * i))
-			}
-			b.Write(intBytes[:])
+			binary.Write(b, binary.BigEndian, value)
 		default:
 			return fmt.Errorf("unknown field type: %v", field.Ftype)
 		}
@@ -233,13 +230,10 @@ func readTupleFrom(b *bytes.Buffer, desc *TupleDesc) (*Tuple, error) {
 				}),
 			}
 		case IntType:
-			var intBytes [8]byte
-			if _, err := io.ReadFull(b, intBytes[:]); err != nil {
-				return nil, err
-			}
 			var value int64
-			for i := 0; i < 8; i++ {
-				value |= int64(intBytes[i]) << (8 * i)
+			err := binary.Read(b, binary.BigEndian, &value)
+			if err != nil {
+				return nil, err
 			}
 			tupe.Fields[i] = IntField{Value: value}
 		default:
