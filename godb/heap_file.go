@@ -162,33 +162,35 @@ func (f *HeapFile) readPage(pageNo int) (Page, error) {
 //
 // The page the tuple is inserted into should be marked as dirty.
 func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
-	for pageNo := 0; pageNo < f.NumPages(); pageNo++ {
-		page, err := f.bufPool.GetPage(f, pageNo, tid, WritePerm)
+	// Attempt to insert into the last page first, as it's the most likely to have space.
+	numPages := f.NumPages()
+	if numPages > 0 {
+		lastPageNo := numPages - 1
+		page, err := f.bufPool.GetPage(f, lastPageNo, tid, WritePerm)
 		if err != nil {
 			return err
 		}
 		hp := page.(*heapPage)
-		_, err = hp.insertTuple(t)
-		if err == nil {
+		if _, err = hp.insertTuple(t); err == nil {
 			hp.setDirty(tid, true)
 			return nil
 		}
 	}
 
-	// No empty slots found; create a new page
-	newPageNo := f.NumPages()
-	hp, err := newHeapPage(f.td, newPageNo, f)
+	// If the last page is full or doesn't exist, create a new page.
+	newPageNo := numPages
+	page, err := newHeapPage(f.td, newPageNo, f)
 	if err != nil {
 		return err
 	}
-	_, err = hp.insertTuple(t)
+	_, err = page.insertTuple(t)
 	if err != nil {
 		return err
 	}
-	hp.setDirty(tid, true)
+	page.setDirty(tid, true)
 
 	// Write the new page to the end of the file
-	err = f.flushPage(hp)
+	err = f.flushPage(page)
 	return err
 }
 

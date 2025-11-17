@@ -1,7 +1,7 @@
 package godb
 
 import (
-"fmt"
+	"fmt"
 )
 
 type Aggregator struct {
@@ -47,8 +47,47 @@ func NewAggregator(emptyAggState []AggState, child Operator) *Aggregator {
 //
 // HINT: use [TupleDesc.merge] to merge the two [TupleDesc]s.
 func (a *Aggregator) Descriptor() *TupleDesc {
-	// TODO: some code goes here
-	return &TupleDesc{} //replace me
+	// If not have group-by, simply merge all aggState's tuple descs
+	if a.groupByFields == nil {
+		var td *TupleDesc
+		for i := 0; i < len(a.newAggState); i++ {
+			aggTd := a.newAggState[i].GetTupleDesc()
+			if td == nil {
+				td = aggTd
+			} else {
+				td = td.merge(aggTd)
+			}
+		}
+		return td
+	}
+
+	// If have group-by, first build group-by tuple desc
+	var gbyTd *TupleDesc
+	for i := 0; i < len(a.groupByFields); i++ {
+		ft := a.groupByFields[i].GetExprType()
+		if gbyTd == nil {
+			gbyTd = &TupleDesc{
+				Fields: []FieldType{ft},
+			}
+		} else {
+			gbyTd = gbyTd.merge(&TupleDesc{
+				Fields: []FieldType{ft},
+			})
+		}
+	}
+
+	// then merge all aggState's tuple descs
+	var aggTd *TupleDesc
+	for i := 0; i < len(a.newAggState); i++ {
+		currAggTd := a.newAggState[i].GetTupleDesc()
+		if aggTd == nil {
+			aggTd = currAggTd
+		} else {
+			aggTd = aggTd.merge(currAggTd)
+		}
+	}
+
+	return aggTd
 }
 
 // Returns an iterator over the results of the aggregate. The aggregate should
@@ -142,8 +181,24 @@ func (a *Aggregator) Iterator(tid TransactionID) (func() (*Tuple, error), error)
 //
 // If there is any error during expression evaluation, return the error.
 func extractGroupByKeyTuple(a *Aggregator, t *Tuple) (*Tuple, error) {
-	// TODO: some code goes here
-	return &Tuple{}, fmt.Errorf("extractGroupByKeyTuple not implemented.") // replace me
+	if a.groupByFields == nil {
+		return nil, fmt.Errorf("extractGroupByKeyTuple called on aggregator with no group-by")
+	}
+
+	var fields []DBValue
+	td := &TupleDesc{}
+
+	for i := 0; i < len(a.groupByFields); i++ {
+		val, err := a.groupByFields[i].EvalExpr(t)
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, val)
+		ft := a.groupByFields[i].GetExprType()
+		td.Fields = append(td.Fields, ft)
+	}
+
+	return &Tuple{*td, fields, nil}, nil
 }
 
 // Given a tuple t from child and (a pointer to) the array of partially computed
@@ -153,7 +208,13 @@ func extractGroupByKeyTuple(a *Aggregator, t *Tuple) (*Tuple, error) {
 // aggState using [aggState.Copy] on appropriate element of the a.newAggState
 // field and add the new aggState to grpAggState.
 func addTupleToGrpAggState(a *Aggregator, t *Tuple, grpAggState *[]AggState) {
-	// TODO: some code goes here
+	for i := 0; i < len(a.newAggState); i++ {
+		if (*grpAggState)[i] == nil {
+			aggState := a.newAggState[i].Copy()
+			(*grpAggState)[i] = aggState
+		}
+		(*grpAggState)[i].AddTuple(t)
+	}
 }
 
 // Given that all child tuples have been added, return an iterator that iterates
@@ -165,9 +226,26 @@ func addTupleToGrpAggState(a *Aggregator, t *Tuple, grpAggState *[]AggState) {
 // Then, you should get the groupByTuple and merge it with each of the AggState
 // tuples using the joinTuples function in tuple.go you wrote in lab 1.
 func getFinalizedTuplesIterator(a *Aggregator, groupByList []*Tuple, aggState map[any]*[]AggState) func() (*Tuple, error) {
-	// TODO: some code goes here
+	var resultTups []*Tuple
+	for i := 0; i < len(groupByList); i++ {
+		key := groupByList[i].tupleKey()
+		aggStates := aggState[key]
+		var finalizedTup *Tuple
+		for j := 0; j < len(*aggStates); j++ {
+			newTup := (*aggStates)[j].Finalize()
+			finalizedTup = joinTuples(finalizedTup, newTup)
+		}
+		resultTups = append(resultTups, joinTuples(groupByList[i], finalizedTup))
+	}
+
+	index := 0
+
 	return func() (*Tuple, error) {
-		// TODO: some code goes here
-		return nil, fmt.Errorf("getFinalizedTuplesIterator not implemented.") // replace me
+		if index >= len(resultTups) {
+			return nil, nil
+		}
+		tup := resultTups[index]
+		index++
+		return tup, nil
 	}
 }
