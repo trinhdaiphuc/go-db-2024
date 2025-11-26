@@ -52,8 +52,8 @@ func (hj *EqualityJoin) Descriptor() *TupleDesc {
 // out. To pass this test, you will need to use something other than a nested
 // loops join.
 func (joinOp *EqualityJoin) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
-	return joinOp.hashJoin(tid)
-	// return joinOp.nestedLoopJoin(tid)
+	// return joinOp.hashJoin(tid)
+	return joinOp.nestedLoopJoin(tid)
 	// return joinOp.sortMergeJoin(tid)
 }
 

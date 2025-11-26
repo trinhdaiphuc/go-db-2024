@@ -6,8 +6,7 @@ type Project struct {
 	selectFields []Expr // required fields for parser
 	outputNames  []string
 	child        Operator
-	// You may want to add additional fields here
-	// TODO: some code goes here
+	distinct     bool
 }
 
 // Construct a projection operator. It saves the list of selected field, child,
@@ -17,8 +16,15 @@ type Project struct {
 // distinct is for noting whether the projection reports only distinct results,
 // and child is the child operator.
 func NewProjectOp(selectFields []Expr, outputNames []string, distinct bool, child Operator) (Operator, error) {
-	// TODO: some code goes here
-	return nil, fmt.Errorf("NewProjectOp not implemented.") // replace me
+	if len(selectFields) != len(outputNames) {
+		return nil, fmt.Errorf("number of select fields and output names must be the same")
+	}
+	return &Project{
+		selectFields: selectFields,
+		outputNames:  outputNames,
+		child:        child,
+		distinct:     distinct,
+	}, nil
 }
 
 // Return a TupleDescriptor for this projection. The returned descriptor should
@@ -27,8 +33,16 @@ func NewProjectOp(selectFields []Expr, outputNames []string, distinct bool, chil
 //
 // HINT: you can use expr.GetExprType() to get the field type
 func (p *Project) Descriptor() *TupleDesc {
-	// TODO: some code goes here
-	return &TupleDesc{} // replace me
+	fields := make([]FieldType, len(p.selectFields))
+	for i, expr := range p.selectFields {
+		fields[i] = FieldType{
+			Fname: p.outputNames[i],
+			Ftype: expr.GetExprType().Ftype,
+		}
+	}
+	return &TupleDesc{
+		Fields: fields,
+	}
 
 }
 
@@ -39,6 +53,42 @@ func (p *Project) Descriptor() *TupleDesc {
 // distinct tuples seen so far. Note that support for the distinct keyword is
 // optional as specified in the lab 2 assignment.
 func (p *Project) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
-	// TODO: some code goes here
-	return nil, fmt.Errorf("Project.Iterator not implemented") // replace me
+	distinctSet := make(map[any]struct{})
+	childIter, err := p.child.Iterator(tid)
+	if err != nil {
+		return nil, err
+	}
+	return func() (*Tuple, error) {
+		for {
+			tuple, err := childIter()
+			if err != nil || tuple == nil {
+				return nil, err
+			}
+
+			fields := make([]DBValue, len(p.selectFields))
+			for i, expr := range p.selectFields {
+				val, err := expr.EvalExpr(tuple)
+				if err != nil {
+					return nil, err
+				}
+				fields[i] = val
+			}
+			if p.distinct {
+				tupleKey := tuple.tupleKey()
+				if _, exists := distinctSet[tupleKey]; exists {
+					continue // skip duplicate
+				}
+				distinctSet[tupleKey] = struct{}{}
+				return &Tuple{
+					Desc:   *p.Descriptor(),
+					Fields: fields,
+				}, nil
+			} else {
+				return &Tuple{
+					Desc:   *p.Descriptor(),
+					Fields: fields,
+				}, nil
+			}
+		}
+	}, nil
 }

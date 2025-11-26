@@ -133,7 +133,7 @@ func (td *TupleDesc) setTableAlias(alias string) {
 // appended onto the fields of desc.
 func (desc *TupleDesc) merge(desc2 *TupleDesc) *TupleDesc {
 	return &TupleDesc{
-		Fields: append(desc.Fields, desc2.Fields...),
+		Fields: append(append([]FieldType{}, desc.Fields...), desc2.Fields...),
 	}
 }
 
@@ -332,40 +332,10 @@ func (t *Tuple) project(fields []FieldType) (*Tuple, error) {
 	}
 
 	for i, field := range fields {
-		matchName := make([]FieldType, 0, len(t.Desc.Fields))
-		// Find all matching fields with the same name and type
-		// (ignoring TableQualifier for now)
-		for _, tField := range t.Desc.Fields {
-			if tField.Fname == field.Fname && tField.Ftype == field.Ftype {
-				matchName = append(matchName, tField)
-			}
+		bestIdx, err := findFieldInTd(field, &t.Desc)
+		if err != nil {
+			return nil, err
 		}
-
-		if len(matchName) == 0 {
-			return nil, GoDBError{
-				IncompatibleTypesError, fmt.Sprintf("field %s.%s not found", field.TableQualifier, field.Fname),
-			}
-		}
-
-		bestIdx := -1
-		// If there is a TableQualifier match, use it
-		for _, mn := range matchName {
-			if mn.TableQualifier == field.TableQualifier {
-				bestIdx, _ = findFieldInTd(mn, &t.Desc)
-				break
-			}
-		}
-		// Otherwise, if there is no TableQualifier match, but there is only one
-		// matching name, use it
-		if bestIdx == -1 {
-			if len(matchName) > 1 {
-				return nil, GoDBError{
-					AmbiguousNameError, fmt.Sprintf("select name %s is ambiguous", field.Fname),
-				}
-			}
-			bestIdx, _ = findFieldInTd(matchName[0], &t.Desc)
-		}
-
 		tuple.Desc.Fields[i] = t.Desc.Fields[bestIdx].copy()
 		tuple.Fields[i] = t.Fields[bestIdx]
 	}
